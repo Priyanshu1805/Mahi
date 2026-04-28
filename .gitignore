@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# AI Models & Binaries (Too heavy for Git)
+whisper_bin/
+whisper.cpp/
+piper_temp/
+*.onnx
+*.bin
+*.exe
+
+# Audio files
+*.wav
+input.wav
+out.wav
+
+# Environment & Config
+.env
+config.py
+
+# OS
+.DS_Store
+Thumbs.db

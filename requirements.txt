@@ -1,0 +1,15 @@
+openai
+python-dotenv
+speechrecognition
+pyttsx3
+pyaudio
+pygame
+pywhatkit
+flask
+requests
+PyQt5
+pvporcupine
+google-api-python-client
+google-auth-oauthlib
+openwakeword
+onnxruntime

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAHI HUD | Command Center</title>
+    <style>
+        :root {
+            --glow-color: #00ffff;
+            --bg-color: #050505;
+            --accent-red: #ff3333;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: var(--bg-color);
+            color: var(--glow-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        .hud-container {
+            position: relative;
+            width: 90vw;
+            height: 90vh;
+            border: 1px solid rgba(0, 255, 255, 0.2);
+            border-radius: 20px;
+            box-shadow: 0 0 50px rgba(0, 255, 255, 0.1);
+            background: radial-gradient(circle at center, rgba(0, 255, 255, 0.05) 0%, transparent 70%);
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.3);
+            padding-bottom: 10px;
+        }
+
+        .system-status {
+            font-size: 1.2rem;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+
+        .main-display {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        .circular-hud {
+            width: 400px;
+            height: 400px;
+            border: 2px solid var(--glow-color);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+        }
+
+        .circular-hud::before {
+            content: '';
+            position: absolute;
+            width: 110%;
+            height: 110%;
+            border: 1px dashed rgba(0, 255, 255, 0.5);
+            border-radius: 50%;
+            animation: rotate 10s linear infinite;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .voice-wave {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+
+        .wave-bar {
+            width: 4px;
+            height: 20px;
+            background: var(--glow-color);
+            border-radius: 2px;
+            animation: wave 1s infinite ease-in-out;
+        }
+
+        @keyframes wave {
+            0%, 100% { height: 20px; }
+            50% { height: 60px; }
+        }
+
+        .controls {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        button {
+            background: transparent;
+            border: 1px solid var(--glow-color);
+            color: var(--glow-color);
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: 0.3s;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background: var(--glow-color);
+            color: var(--bg-color);
+            box-shadow: 0 0 20px var(--glow-color);
+        }
+
+        .terminal {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 300px;
+            height: 150px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            padding: 10px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.8rem;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="hud-container">
+        <div class="header">
+            <div class="system-status">System: Online</div>
+            <div class="time" id="clock">00:00:00</div>
+        </div>
+
+        <div class="main-display">
+            <div class="circular-hud">
+                <div class="voice-wave">
+                    <div class="wave-bar" style="animation-delay: 0.1s"></div>
+                    <div class="wave-bar" style="animation-delay: 0.2s"></div>
+                    <div class="wave-bar" style="animation-delay: 0.3s"></div>
+                    <div class="wave-bar" style="animation-delay: 0.4s"></div>
+                    <div class="wave-bar" style="animation-delay: 0.5s"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="terminal" id="log">
+            Initializing MAHI Core...<br>
+            Checking subsystems...<br>
+            Neural link established.<br>
+            Awaiting voice command...
+        </div>
+
+        <div class="controls">
+            <button onclick="sendCommand('Mute')">Mute</button>
+            <button onclick="sendCommand('System Scan')">System Scan</button>
+            <button onclick="sendCommand('Lock Down')">Lock Down</button>
+        </div>
+    </div>
+
+    <script>
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toLocaleTimeString();
+        }
+        setInterval(updateClock, 1000);
+
+        function sendCommand(cmd) {
+            const log = document.getElementById('log');
+            log.innerHTML += `<br>> Executing: ${cmd}`;
+            log.scrollTop = log.scrollHeight;
+
+            fetch('/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cmd: cmd })
+            }).then(response => response.json())
+              .then(data => {
+                  log.innerHTML += `<br>> Status: ${data.status}`;
+              });
+        }
+    </script>
+</body>
+</html>
