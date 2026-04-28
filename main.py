@@ -13,6 +13,7 @@ import json
 from integrations import android, gmail, calendar
 from remote import server
 import traceback
+from difflib import get_close_matches
 
 # Use standard print as it is thread-safe in Python 3 for single calls
 def safe_print(*args, **kwargs):
@@ -33,6 +34,62 @@ THRESHOLD     = 0.20           # Higher sensitivity for soft voices
 CHUNK          = 1280
 RATE           = 16000
 RECORD_SECONDS = 4
+
+
+def _clean_text(text):
+    """Normalize transcript/model output into readable text."""
+    if not text:
+        return ""
+    cleaned = " ".join(text.replace("\n", " ").split())
+    return cleaned.strip().strip('"')
+
+
+def _summarize_app_list(raw_apps, limit=15):
+    """Create a short, speakable app listing."""
+    app_lines = [line.strip() for line in raw_apps.splitlines() if line.strip()]
+    if not app_lines:
+        return "I could not find any third-party apps."
+
+    sample = ", ".join(app_lines[:limit])
+    more = len(app_lines) - limit
+    if more > 0:
+        return f"I found {len(app_lines)} apps. Here are some: {sample}, and {more} more."
+    return f"I found {len(app_lines)} apps: {sample}."
+
+
+def _resolve_open_app_command(cmd):
+    """Resolve an 'open app' style command to a package name."""
+    trigger_phrases = ["open app", "launch app", "open"]
+    app_name = ""
+    for phrase in trigger_phrases:
+        if phrase in cmd:
+            app_name = cmd.split(phrase, 1)[1].strip()
+            if app_name:
+                break
+
+    if not app_name:
+        return None
+
+    raw_apps = android.list_installed_apps()
+    if raw_apps.lower().startswith("error"):
+        return f"I could not read installed apps: {raw_apps}"
+
+    package_map = {pkg.lower(): pkg for pkg in raw_apps.splitlines() if pkg.strip()}
+    if not package_map:
+        return "I could not find installed apps on your device."
+
+    candidates = list(package_map.keys())
+    matches = [p for p in candidates if app_name in p]
+    if not matches:
+        close = get_close_matches(app_name, candidates, n=1, cutoff=0.6)
+        if close:
+            matches = close
+
+    if not matches:
+        return f"I could not find an app matching '{app_name}'."
+
+    package = package_map[matches[0]]
+    return android.open_app(package)
 
 # ─────────────────────────────────────────────
 # UI – runs in a separate thread
@@ -182,11 +239,21 @@ def record_audio_from_stream(stream, filename):
 def transcribe(filename):
     """Uses Whisper to convert the recorded WAV file into text."""
     set_status("Transcribing...")
-    result = subprocess.run(
-        [WHISPER_EXE, "-m", WHISPER_MODEL, "-f", filename, "-nt"],
-        capture_output=True, text=True, timeout=30
-    )
-    text = result.stdout.strip()
+    try:
+        result = subprocess.run(
+            [WHISPER_EXE, "-m", WHISPER_MODEL, "-f", filename, "-nt"],
+            capture_output=True, text=True, timeout=45
+        )
+    except FileNotFoundError:
+        return ""
+    except subprocess.TimeoutExpired:
+        return ""
+
+    if result.returncode != 0:
+        print(f"  [Whisper Error] {result.stderr}")
+        return ""
+
+    text = _clean_text(result.stdout)
     print(f"  >> You said: {text!r}")
     return text
 
@@ -196,7 +263,11 @@ def ask_ai(prompt):
     set_status("Thinking...")
     
     # Handle direct commands first (super fast)
-    cmd = prompt.lower()
+    cleaned_prompt = _clean_text(prompt)
+    if not cleaned_prompt:
+        return "I did not catch that. Please say it again."
+
+    cmd = cleaned_prompt.lower()
     if "battery" in cmd:
         return f"The battery level is {android.get_battery_level()}."
     if "screenshot" in cmd:
@@ -206,12 +277,16 @@ def ask_ai(prompt):
     if "calendar" in cmd or "event" in cmd:
         return calendar.get_events()
     if "list apps" in cmd or "installed apps" in cmd:
-        return f"Here are your apps: {android.list_installed_apps()}"
+        return _summarize_app_list(android.list_installed_apps())
+
+    open_app_response = _resolve_open_app_command(cmd)
+    if open_app_response:
+        return open_app_response
 
     # Default to Ollama API for everything else
     payload = {
         "model": "llama3",
-        "prompt": f"System: Your name is Mahi. You are a concise, helpful AI assistant. Respond briefly. User: {prompt}",
+        "prompt": f"System: Your name is Mahi. You are a fast, Siri-like, concise AI assistant. Respond in short natural speech. User: {cleaned_prompt}",
         "stream": False
     }
     try:
@@ -242,7 +317,7 @@ def speak(text):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        proc.communicate(input=text.encode("utf-8"), timeout=30)
+        proc.communicate(input=_clean_text(text).encode("utf-8"), timeout=30)
         proc.wait()
 
         # Play speech using Pygame (more robust than playsound)
@@ -295,6 +370,20 @@ if __name__ == "__main__":
         sys.exit(1)
 
     safe_print(f"\n=== MAHI READY === Say 'Hey Jarvis' to activate. Ctrl+C to quit.\n")
+
+    # Warm up model in background so first real response is faster.
+    def _warmup_ollama():
+        try:
+            requests.post(
+                OLLAMA_URL,
+                json={"model": "llama3", "prompt": "Say ready.", "stream": False},
+                timeout=20,
+            )
+            safe_print("[Warmup] Ollama warmup complete.")
+        except Exception:
+            safe_print("[Warmup] Ollama warmup skipped.")
+
+    threading.Thread(target=_warmup_ollama, daemon=True).start()
 
     try:
         while True:
