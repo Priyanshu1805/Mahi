@@ -1,4 +1,5 @@
 import os
+import subprocess
 
 def open_app(package):
     """
@@ -68,10 +69,19 @@ def list_installed_apps():
     """
     Lists all third-party installed apps on the Android device.
     """
-    import subprocess
     try:
-        result = subprocess.run(["adb", "shell", "pm", "list", "packages", "-3"], capture_output=True, text=True)
-        apps = [line.replace("package:", "") for line in result.stdout.splitlines()]
+        result = subprocess.run(
+            ["adb", "shell", "pm", "list", "packages", "-3"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return f"Error: {result.stderr.strip() or 'adb package list failed'}"
+
+        apps = sorted(
+            [line.replace("package:", "").strip() for line in result.stdout.splitlines() if line.strip()]
+        )
         return "\n".join(apps) if apps else "No third-party apps found"
     except Exception as e:
         return f"Error: {e}"
